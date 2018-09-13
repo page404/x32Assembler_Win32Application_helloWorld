@@ -3,14 +3,18 @@
 option casemap:none   ;区分大小写,如果不写这一行,不区分大小写.
 
 ;-------这里的路径必须是 RadASM 32位 软件的安装目录下的 include 跟 lib,要不然生成不了 exe 文件
-;inc相关
+;--inc相关
 include C:\RadASM\masm32\include\windows.inc
 include C:\RadASM\masm32\include\kernel32.inc
 include C:\RadASM\masm32\include\user32.inc
+;-汇编调用动态C库函数
+include C:\RadASM\masm32\include\msvcrt.inc
 include myres.inc
-;lib相关
+;--lib相关
 includelib C:\RadASM\masm32\lib\kernel32.lib
 includelib C:\RadASM\masm32\lib\user32.lib
+;-汇编调用动态C库函数
+includelib C:\RadASM\masm32\lib\msvcrt.lib
 
 ;-------------各段定义的先后顺序无所谓,每个段的声明就是一个段的开始,当遇到下一个段的声明或者end就是上一个段的结束.
 
@@ -18,13 +22,59 @@ includelib C:\RadASM\masm32\lib\user32.lib
     
 
 .data?   ;未初始化的数据段,只能用?,不能初始化. (几乎不占磁盘空间,内存空间还是同样会占用)
-
+  g_hInstance dd ?
 
 .const   ;常量段,该段的内容是只读的.
     g_szHello db 'Hello world!  please left click!',0    ;dos下是以$作为字符串的结束符,在386及往后的版本中,以0作为字符串的结束符.
 	g_szTitle db 'Page404',0
+	
+	g_szUsername db 'diyike', 0
+    g_szPassword db 'Cracker', 0
 
 .code    ;代码段   ----- 在该例中,自定义的函数顺序非常重要,被调用的要放上面.否则识别不了.跟C语言自定义的函数原理一样.
+
+;自定义的关于对话框的相关操作,该DialogProc函数是由DialogBoxParam的第四个参数调用的回调函数
+DialogProc proc hWnd:HWND, uMsg:UINT, wParam:WPARAM, lParam:LPARAM
+	
+  local @szUsername[256]:BYTE
+  local @szPassword[256]:BYTE
+
+  .if uMsg == WM_INITDIALOG  ;对话框初始化时,进入该判断
+    invoke SetDlgItemText, hWnd, EDT_USERNAME, addr g_szUsername
+    invoke SetDlgItemText, hWnd, EDT_PASSWORD, addr g_szPassword
+      
+    mov eax, TRUE
+    ret
+  .elseif uMsg == WM_COMMAND
+    mov eax, wParam
+    .if ax == CMD_CHECK   ;用户点击了关于对话框的确定按钮
+      invoke GetDlgItemText, hWnd, EDT_USERNAME, 
+        addr @szUsername, sizeof @szUsername
+      invoke GetDlgItemText, hWnd, EDT_PASSWORD, 
+        addr @szPassword, sizeof @szPassword
+
+      invoke MessageBox, NULL, addr @szUsername, addr @szPassword, MB_OK
+	  
+	  ;汇编调用动态C库函数的使用方式,在前面加上 crt_ ,有一些是加上 crt__ 还有一些是加上 crt___
+      invoke crt_strlen, addr g_szUsername
+      invoke crt_strcpy, addr @szUsername, addr g_szUsername
+      
+      mov eax, TRUE
+      ret
+    .elseif ax == CMD_CANCEL  ;用户点击了关于对话框的取消按钮
+      invoke SendMessage, hWnd, WM_CLOSE, 0, 0
+      
+      mov eax, TRUE
+      ret
+    .endif
+
+  .elseif uMsg == WM_CLOSE  ;用户点击了关于对话框右上角的关闭
+      invoke EndDialog, hWnd, 0
+  .endif
+
+  mov eax, FALSE
+  ret
+DialogProc endp
 
 WndProc proc hWnd:HWND,message:UINT,wParam:WPARAM,lParam:LPARAM
 
@@ -75,9 +125,18 @@ WndProc proc hWnd:HWND,message:UINT,wParam:WPARAM,lParam:LPARAM
    ; }
    ; return 0;
    
-    .if message == WM_LBUTTONDOWN
+  .if message == WM_LBUTTONDOWN
     invoke MessageBox, NULL, offset g_szHello, offset g_szTitle, MB_OK
-
+  .elseif message == WM_COMMAND
+    mov eax, wParam
+    .if ax == IDM_FILE_EXIT ;ax即取得 eax 的低位,即ID号(wmId    = LOWORD(wParam);),高位为事件号(wmEvent = HIWORD(wParam); )
+	  ;如果点击了退出按钮,发送WM_DESTROY消息,再次进入WndProc,由 WM_DESTROY 接收做统一结束程序处理操作.
+      invoke SendMessage, hWnd, WM_DESTROY, 0, 0
+    .elseif ax == IDM_FILE_OPEN
+      invoke MessageBox, NULL, offset g_szHello, offset g_szTitle, MB_OK
+    .elseif ax == IDM_HELP_ABOUT
+      invoke DialogBoxParam, g_hInstance, DLG_ABOUT, hWnd, offset DialogProc, NULL  ;我们重写了 DialogProc 函数
+    .endif
   .elseif message == WM_PAINT
     invoke BeginPaint, hWnd, addr @ps
     mov @hdc, eax
@@ -226,6 +285,9 @@ WinMain endp
 START:
     
 	invoke GetModuleHandle,NULL  ;在vc6.0自动生成的win32 application中的WinMain函数中打断点,在堆栈中往上找,会发现 GetModuleHandle 函数
+	
+	mov g_hInstance, eax
+	
 	invoke WinMain,eax   ;我们重写了 WinMain 函数
 	
 	;调用 kernel32.dll 正常退出程序
