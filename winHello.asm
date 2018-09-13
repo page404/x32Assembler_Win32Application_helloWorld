@@ -7,6 +7,7 @@ option casemap:none   ;区分大小写,如果不写这一行,不区分大小写.
 include C:\RadASM\masm32\include\windows.inc
 include C:\RadASM\masm32\include\kernel32.inc
 include C:\RadASM\masm32\include\user32.inc
+include myres.inc
 ;lib相关
 includelib C:\RadASM\masm32\lib\kernel32.lib
 includelib C:\RadASM\masm32\lib\user32.lib
@@ -167,6 +168,17 @@ MyRegisterClass proc hInstance:HINSTANCE
 	
 	; wcex.lpszClassName	= szWindowClass;
 	mov @wcex.lpszClassName,offset g_szHello
+	
+	;wcex.hIcon	= LoadIcon(hInstance, (LPCTSTR)IDI_HELLOWORLD);
+	invoke LoadIcon, hInstance, IDI_HELLO
+	mov @wcex.hIcon, eax
+	
+	;wcex.lpszMenuName	= (LPCSTR)IDC_HELLOWORLD;
+	mov @wcex.lpszMenuName, IDM_TESTSDK
+	
+	;wcex.hIconSm = LoadIcon(wcex.hInstance, (LPCTSTR)IDI_SMALL);
+	invoke LoadIcon, hInstance, IDI_HELLO
+    mov @wcex.hIconSm, eax
 
 	; return RegisterClassEx(&wcex);
 	invoke RegisterClassEx,addr @wcex   ;invoke 使用局部变量必须用 addr 修饰
